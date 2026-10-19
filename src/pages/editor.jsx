@@ -78,7 +78,7 @@ export default function Editor() {
       editor.restoreRef.current = null;
     }
   }, [editor.doc, editor.editorRef, editor.restoreRef]);
-  const onOpenFile = async file => {
+  const onOpenFile = useCallback(async file => {
     const name = file.name.toLowerCase();
     const openBinary = () => {
       if (!binaryFile) previousEditModeRef.current = editor.editMode;
@@ -99,19 +99,19 @@ export default function Editor() {
       }
     }
     openBinary();
-  };
-  const openViaPicker = async () => {
+  }, [binaryFile, editor]);
+  const openViaPicker = useCallback(async () => {
     if (typeof window.showOpenFilePicker !== 'function') { fileRef.current?.click(); return; }
     try {
-      // Retaining this handle makes a native .nxtf file genuinely writable;
-      // the legacy hidden file input exposes bytes but grants no write access.
+      // Ask the user to choose a local file; ByteFrame stages binary edits
+      // separately and does not overwrite the selected original file.
       const [handle] = await window.showOpenFilePicker({ multiple: false });
       if (!handle) return;
       const file = await handle.getFile();
       if (!window.confirm('Open this file? Editable documents replace the current draft. Binary files open in ByteFrame for byte inspection and reversible edits without replacing the draft.')) return;
       await onOpenFile(file);
     } catch (error) { if (error.name !== 'AbortError') window.alert(error.message || 'Unable to open file.'); }
-  };
+  }, [onOpenFile]);
   useEffect(() => {
     const onShortcut = event => {
       const mod = event.ctrlKey || event.metaKey;
