@@ -78,26 +78,6 @@ export default function Editor() {
       editor.restoreRef.current = null;
     }
   }, [editor.doc, editor.editorRef, editor.restoreRef]);
-  useEffect(() => {
-    const onShortcut = event => {
-      const mod = event.ctrlKey || event.metaKey;
-      if (!mod || event.altKey) return;
-      const target = event.target;
-      // Nested table/chart inputs are inside .nexa-edit-surface, but they
-      // must retain native text-editing shortcuts rather than opening dialogs.
-      const outsideEditorInput = target && (target.matches?.('input,textarea,select') ||
-        (target.isContentEditable && !target.closest?.('.nexa-edit-surface')));
-      if (outsideEditorInput) return;
-      const key = event.key.toLowerCase();
-      if (key === 'h' || (key === 'f' && !event.shiftKey)) { event.preventDefault(); setDialog('find'); }
-      else if (key === 'o') { event.preventDefault(); openViaPicker(); }
-      else if (key === '/' && !event.shiftKey) { event.preventDefault(); setDialog('shortcuts'); }
-      else if (key === 'c' && event.shiftKey) { event.preventDefault(); setDialog('wordcount'); }
-      else if (key === 'p' && event.shiftKey) { event.preventDefault(); setShowNonPrinting(value => !value); }
-    };
-    window.addEventListener('keydown', onShortcut);
-    return () => window.removeEventListener('keydown', onShortcut);
-  }, []);
   const onOpenFile = async file => {
     const name = file.name.toLowerCase();
     const openBinary = () => {
@@ -132,6 +112,26 @@ export default function Editor() {
       await onOpenFile(file);
     } catch (error) { if (error.name !== 'AbortError') window.alert(error.message || 'Unable to open file.'); }
   };
+  useEffect(() => {
+    const onShortcut = event => {
+      const mod = event.ctrlKey || event.metaKey;
+      if (!mod || event.altKey) return;
+      const target = event.target;
+      // Nested table/chart inputs are inside .nexa-edit-surface, but they
+      // must retain native text-editing shortcuts rather than opening dialogs.
+      const outsideEditorInput = target && (target.matches?.('input,textarea,select') ||
+        (target.isContentEditable && !target.closest?.('.nexa-edit-surface')));
+      if (outsideEditorInput) return;
+      const key = event.key.toLowerCase();
+      if (key === 'h' || (key === 'f' && !event.shiftKey)) { event.preventDefault(); setDialog('find'); }
+      else if (key === 'o') { event.preventDefault(); openViaPicker(); }
+      else if (key === '/' && !event.shiftKey) { event.preventDefault(); setDialog('shortcuts'); }
+      else if (key === 'c' && event.shiftKey) { event.preventDefault(); setDialog('wordcount'); }
+      else if (key === 'p' && event.shiftKey) { event.preventDefault(); setShowNonPrinting(value => !value); }
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [openViaPicker]);
   const closeBinary = () => {
     setBinaryFile(null); setByteFrameOverride(null);
     editor.setEditMode(previousEditModeRef.current);

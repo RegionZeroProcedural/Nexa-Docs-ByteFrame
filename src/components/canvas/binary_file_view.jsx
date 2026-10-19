@@ -90,11 +90,12 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
   useEffect(() => {
     if (!prefix) return undefined;
     const id = ++loadId.current;
+    let cancelled = false;
     setBaseWindowBytes(null);
     file.slice(offset, Math.min(offset + PAGE_BYTES, file.size)).arrayBuffer()
-      .then(buffer => { if (loadId.current === id) setBaseWindowBytes(new Uint8Array(buffer)); })
-      .catch(problem => { if (loadId.current === id) setError(problem.message || 'Unable to read file region.'); });
-    return () => { loadId.current++; };
+      .then(buffer => { if (!cancelled && loadId.current === id) setBaseWindowBytes(new Uint8Array(buffer)); })
+      .catch(problem => { if (!cancelled && loadId.current === id) setError(problem.message || 'Unable to read file region.'); });
+    return () => { cancelled = true; };
   }, [file, prefix, offset]);
   // Structure and disassembly both reflect staged edits before download.
   const windowBytes = useMemo(() => overlayByteEdits(baseWindowBytes, offset, edits), [baseWindowBytes, offset, edits]);
@@ -352,7 +353,7 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
                 const abs = row.at + i, region = regionAtOffset(structure?.sections, abs), instruction = instructionByByte.get(abs);
                 return <button key={abs} type="button" className={`binary-byte byte-region-${region?.kind || 'unknown'} ${!region ? `binary-raw-${rawByteCategory(value)}` : ''} ${instruction ? `binary-opcode-${instruction.category} binary-role-${instruction.role}` : ''} ${edits.has(abs) ? 'is-edited' : ''} ${decoded && instruction && decoded.start === instruction.start ? 'is-instruction-member' : ''} ${matchGroups.has(abs-offset) ? `match-palette-${matchGroups.get(abs-offset)}` : ''} ${byteDisplayClass(value,abs-offset)} ${selected === abs ? 'is-current' : ''}`}
                   data-byte-offset={abs} data-hex-value={hex(value)} 
-                  aria-label={`Offset 0x${address(abs)}, byte ${hex(value)}${instruction ? `, ${instruction.mnemonic}, ${roleNames[instruction.role] || instruction.role}` : `, ${categoryNames[region?.kind || 'unknown']}`}`}  aria-selected={selected === abs} onClick={event => chooseGridByte(event, abs)}>{hex(value)}</button>;
+                  aria-label={`Offset 0x${address(abs)}, byte ${hex(value)}${instruction ? `, ${instruction.mnemonic}, ${roleNames[instruction.role] || instruction.role}` : `, ${categoryNames[region?.kind || 'unknown']}`}`}  aria-pressed={selected === abs} onClick={event => chooseGridByte(event, abs)}>{hex(value)}</button>;
               })}</div>
               <span className="binary-ascii" role="gridcell">{Array.from(row.bytes, value => value >= 32 && value <= 126 ? String.fromCharCode(value) : '.').join('')}</span>
             </div>)}</div>}

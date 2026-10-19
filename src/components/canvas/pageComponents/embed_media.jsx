@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { clamp } from '../../../editorCore/embedPosition';
 import { snapEmbedPosition } from '../../../editorCore/embedSnapping';
 import { updateTableCell, updateChartPoint } from '../../../editorCore/embedDataEdits';
 

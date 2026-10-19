@@ -31,7 +31,9 @@ export function paginateLines(text, availableHeight, measure, maxPages = 2000, o
     let safety = 0;
     do {
       if (++safety > line.text.length + 10) break;
-      const fitting = (end) => measure({ lineIndex: line.lineIndex, start, end, continued: continuation }, !continuation);
+      const fragmentStart = start;
+      const wasContinued = continuation;
+      const fitting = (end) => measure({ lineIndex: line.lineIndex, start: fragmentStart, end, continued: wasContinued }, !wasContinued);
       let end = line.end;
       let height = fitting(end);
       if (height > remaining + 0.5 && pages[pages.length - 1].fragments.length) {

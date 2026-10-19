@@ -126,7 +126,7 @@ export function beginnerExplanation(instruction) {
 export function analyzeNearbyPattern(sequence = [], activeStart) {
   const instructions = sequence.filter(i => i && Number.isSafeInteger(i.start) && i.size > 0 && i.mnemonic && i.mnemonic !== 'Unknown / raw byte')
     .sort((a,b) => a.start-b.start);
-  const at = instructions.findIndex(i => i.start === activeStart || activeStart >= i.start && activeStart < i.start + i.size);
+  const at = instructions.findIndex(i => i.start === activeStart || (activeStart >= i.start && activeStart < i.start + i.size));
   if (at < 0) return null;
   const connected = (a,b) => a && b && a.start + a.size === b.start;
   for (let j = Math.max(0, at - 2); j <= at; j++) {

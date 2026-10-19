@@ -50,7 +50,6 @@ export function snapEmbedPosition(position, size, page, neighbors = [], options 
     for (const at of [rect.y, rect.y + rect.height / 2, rect.y + rect.height]) yRefs.push({ at, name: 'Object alignment' });
   }
   function align(axis, refs) {
-    const length = axis === 'x' ? width : height;
     const max = axis === 'x' ? bounds.xMax : bounds.yMax;
     let best = null;
     for (const ref of refs) {

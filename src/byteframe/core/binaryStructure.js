@@ -127,7 +127,7 @@ export function inspectBinaryStructure(input, sourcePositions = []) {
                 const p=thunkAt+j*step;
                 const low=uint(b,p,4), high=step===8?uint(b,p+4,4):0;
                 if(!low&&!high)break;
-                if(step===8 && high>=0x80000000 || step===4 && low>=0x80000000) continue;
+                if ((step === 8 && high >= 0x80000000) || (step === 4 && low >= 0x80000000)) continue;
                 const importAt=rvaToOffset(low);
                 if(importAt!==null && importAt+3<b.length) {
                   const name=cstring(b,importAt+2,100).match(/^[a-zA-Z_?@][a-zA-Z0-9_?@$]{0,98}/)?.[0];

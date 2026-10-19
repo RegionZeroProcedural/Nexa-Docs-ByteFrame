@@ -1,5 +1,5 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
-import { lineStarts, paragraphAt } from '../../../editorCore/paragraphs';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { paragraphAt } from '../../../editorCore/paragraphs';
 import { restoreEditorSelection } from '../../../editorCore/selectionManager';
 
 /** Comments render outside the editable document. Cards follow the paragraph
@@ -7,7 +7,7 @@ import { restoreEditorSelection } from '../../../editorCore/selectionManager';
 export default function CommentsPanel({ editor, showResolved = false, onClose }) {
   const railRef = useRef(null);
   const [positions, setPositions] = useState({});
-  const comments = (editor.doc.comments || []).filter(c => showResolved || !c.resolved);
+  const comments = useMemo(() => (editor.doc.comments || []).filter(c => showResolved || !c.resolved), [editor.doc.comments, showResolved]);
   const { text } = editor.doc;
   useLayoutEffect(() => {
     const refresh = () => {
@@ -15,7 +15,6 @@ export default function CommentsPanel({ editor, showResolved = false, onClose })
       const rail = railRef.current;
       if (!root || !rail) return;
       const lines = root.querySelectorAll('[data-editor-line]');
-      const starts = lineStarts(text);
       const railRect = rail.getBoundingClientRect();
       const scale = Number(rail.closest('.canvas-page-row')?.dataset.zoom || 100) / 100;
       const located = comments.map(c => {
@@ -43,7 +42,7 @@ export default function CommentsPanel({ editor, showResolved = false, onClose })
       else window.clearTimeout(handle);
       window.removeEventListener('resize', refresh);
     };
-  }, [editor.doc, editor.editorRef, text, showResolved, comments.length]);
+  }, [editor.doc, editor.editorRef, text, comments]);
 
   if (!comments.length) return null;
   return <aside ref={railRef} className="comments-rail" aria-label="Document comments">

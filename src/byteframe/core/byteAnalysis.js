@@ -82,9 +82,10 @@ export function analyzeByteText(text) {
   // strict line matcher avoids turning ordinary prose containing 'a0' into opcodes.
   let wholeLineOffset = 0;
   for (const line of source.split('\n')) {
+    const lineStart = wholeLineOffset; // Capture an immutable offset for the overlap check.
     const trimmed = line.trim();
     if (/^(?:(?:0x)?[\da-fA-F]{2})(?:[ \t]+(?:0x)?[\da-fA-F]{2})?$/.test(trimmed) &&
-        !matches.some(m => m.index < wholeLineOffset + line.length && m.index + m[0].length > wholeLineOffset)) {
+        !matches.some(m => m.index < lineStart + line.length && m.index + m[0].length > lineStart)) {
       matches.push({ 0:trimmed, index:wholeLineOffset + line.indexOf(trimmed) });
     }
     wholeLineOffset += line.length + 1;
@@ -132,7 +133,7 @@ export function analyzeByteText(text) {
     if (assembly && (
       ['RET', 'NOP', 'INT3', 'SYSCALL', 'CPUID', 'RDTSC', 'LEAVE'].includes(assembly[1].toUpperCase()) ||
       /^(?:\[|(?:[RE](?:AX|BX|CX|DX|SI|DI|SP|BP)|R(?:1[0-5]|[89]))\b|(?:0x)?[0-9]+\b|[A-Za-z_$][\w$.]*:)/i.test((assembly[2] || '').trim()) ||
-      /^(?:J[A-Z]*|CALL)\b/i.test(assembly[1]) && Boolean((assembly[2] || '').trim())
+      (/^(?:J[A-Z]*|CALL)\b/i.test(assembly[1]) && Boolean((assembly[2] || '').trim()))
     )) {
       const mnemonic = assembly[1].toUpperCase();
       const offset = lineOffset + line.indexOf(assembly[1], assembly.index);

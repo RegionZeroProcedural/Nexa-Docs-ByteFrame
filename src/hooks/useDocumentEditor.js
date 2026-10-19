@@ -465,7 +465,7 @@ export default function useDocumentEditor() {
     if (isEmbeddedObjectEvent(e.target)) return;
     if (editMode !== 'editing') { e.preventDefault(); return; }
     e.preventDefault();
-    const plainOnly = plainPasteRef.current || e.shiftKey && (e.ctrlKey || e.metaKey);
+    const plainOnly = plainPasteRef.current || (e.shiftKey && (e.ctrlKey || e.metaKey));
     plainPasteRef.current = false;
     const fragment = fragmentFromClipboardData(e.clipboardData, plainOnly);
     pasteFragment(fragment, plainOnly);
