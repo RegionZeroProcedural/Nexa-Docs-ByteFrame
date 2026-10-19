@@ -10,6 +10,8 @@ import { documentLines, paginateLines, groupColumns } from './pagination';
 import { rulerGeometry } from './rulerMath';
 import { restoreEditorSelection } from '../../editorCore/selectionManager';
 import { isEmbeddedObjectFocused } from '../../editorCore/embeddedInputScope';
+import MobilePanel from '../mobile/MobilePanel';
+import { mobilePageGeometry } from './mobilePageGeometry';
 
 function sliceHeight(mirror, part, line, doc, fallbackWidth, base) {
   if (!mirror || !line) return 25;
@@ -75,9 +77,11 @@ const PaginationMirror = React.memo(function PaginationMirror({ doc, lines, widt
   </div>;
 });
 
-export default function CanvasPage({ editor, zoom, view }) {
+export default function CanvasPage({ editor, zoom, view, viewport = { mobile: false, width: 1024 }, mobilePanel, onMobilePanelClose }) {
   const [verticalPreview, setVerticalPreview] = useState(null);
-  const page = { ...view.page, ...(verticalPreview || {}) };
+  const sourcePage = { ...view.page, ...(verticalPreview || {}) };
+  // Viewport-only geometry; original paper size and margins remain in the document.
+  const page = viewport.mobile ? mobilePageGeometry(sourcePage, viewport.width, zoom) : sourcePage;
   const g = rulerGeometry(page, editor.activeParagraph);
   const pageVariables = {
     '--paper-width': `${g.width}px`, '--paper-height': `${g.height}px`,
@@ -140,7 +144,7 @@ export default function CanvasPage({ editor, zoom, view }) {
   }, [editor.doc, isLargeDocument, hasPrintLayout]);
   const measuredDoc = isLargeDocument ? deferredDoc : editor.doc;
   const measuredLines = useMemo(() => documentLines(measuredDoc.text), [measuredDoc.text]);
-  const columnCount = hasPrintLayout ? Math.min(3, Math.max(1, Number(view.page?.columns) || 1)) : 1;
+  const columnCount = hasPrintLayout ? (viewport.mobile ? 1 : Math.min(3, Math.max(1, Number(view.page?.columns) || 1))) : 1;
   const innerWidth = g.width - g.leftMargin - g.rightMargin;
   const width = (innerWidth - (columnCount - 1) * 20) / columnCount;
   const geometryKey = [g.width,g.height,g.leftMargin,g.rightMargin,g.top,g.bottom,columnCount].join(':');
@@ -198,7 +202,7 @@ export default function CanvasPage({ editor, zoom, view }) {
   const verticalChange = (kind, value) => {
     if (editable) editor.updatePage({ [kind === 'top' ? 'topMargin' : 'bottomMargin']: value });
   };
-  return <div className={`canvas-page-row ${hasPrintLayout ? 'nexa-print-pages' : 'nexa-pageless'} ${awaitingLayout ? 'nexa-pagination-pending' : ''}`}
+  return <div className={`canvas-page-row ${viewport.mobile ? 'is-mobile-document' : ''} ${hasPrintLayout ? 'nexa-print-pages' : 'nexa-pageless'} ${awaitingLayout ? 'nexa-pagination-pending' : ''}`}
     data-zoom={zoom} style={{ zoom: `${zoom}%`, ...pageVariables }}>
     <section className="paper-wrap" style={pageVariables} aria-label="Document pages">
       {/* One editable surface spans the entire logical document, even across sheets. */}
@@ -208,7 +212,7 @@ export default function CanvasPage({ editor, zoom, view }) {
         data-is-empty={editor.doc.text.length === 0 ? 'true' : undefined} {...editor.editorEvents}
         onMouseOver={hoverSourceByte} onMouseLeave={() => { sourceHoveredComponent.current?.classList.remove('is-source-hover'); sourceHoveredComponent.current=null; }}>
         {pages.map((section, index) => <React.Fragment key={index}>
-          {index === 0 && view.showRuler && <div contentEditable={false}><MarginRulerTop page={page} paragraph={editor.activeParagraph} onChange={horizontalChange} disabled={!editable} /></div>}
+          {index === 0 && view.showRuler && <div contentEditable={false}><MarginRulerTop page={page} paragraph={editor.activeParagraph} onChange={horizontalChange} disabled={!editable || viewport.mobile} /></div>}
           <div className="paper-page-frame" data-page-number={index + 1}>
             {view.showRuler && <div contentEditable={false}><MarginRulerLeft page={page} onChange={verticalChange} disabled={!editable}
               onPreview={(kind, value) => setVerticalPreview(kind ? { [kind === 'top' ? 'topMargin' : 'bottomMargin']: value } : null)} /></div>}
@@ -246,8 +250,17 @@ export default function CanvasPage({ editor, zoom, view }) {
       </div>
       <PaginationMirror doc={measuredDoc} lines={measuredLines} width={width} mirrorRef={mirrorRef} />
     </section>
-    {view.showByteFrame && <ByteInspectorPanel analysis={view.activeByte} structure={view.byteAnalysis?.structure} groups={view.byteAnalysis?.groups || []} truncated={view.byteAnalysis?.truncated} analyzing={view.byteAnalysisPending} onSelect={editor.goToOffset} onHover={hoverByte} />}
-    {view.showComments && editor.doc.comments?.some(c => view.showResolved || !c.resolved) &&
-      <CommentsPanel editor={editor} showResolved={view.showResolved} onClose={() => view.setShowComments(false)} />}
+    {view.showByteFrame && (viewport.mobile ?
+      <MobilePanel open={mobilePanel === 'byteframe'} title="ByteFrame inspector" side="right" onClose={onMobilePanelClose}>
+        <ByteInspectorPanel analysis={view.activeByte} structure={view.byteAnalysis?.structure} groups={view.byteAnalysis?.groups || []} truncated={view.byteAnalysis?.truncated} analyzing={view.byteAnalysisPending} onSelect={offset => { editor.goToOffset(offset); onMobilePanelClose(); }} onHover={hoverByte} />
+      </MobilePanel> :
+      <ByteInspectorPanel analysis={view.activeByte} structure={view.byteAnalysis?.structure} groups={view.byteAnalysis?.groups || []} truncated={view.byteAnalysis?.truncated} analyzing={view.byteAnalysisPending} onSelect={editor.goToOffset} onHover={hoverByte} />)}
+    {view.showComments && (viewport.mobile ?
+      <MobilePanel open={mobilePanel === 'comments'} title="Document comments" side="right" onClose={onMobilePanelClose}>
+        {editor.doc.comments?.some(c => view.showResolved || !c.resolved)
+          ? <CommentsPanel editor={editor} showResolved={view.showResolved} onClose={onMobilePanelClose} />
+          : <p className="mobile-panel-empty">No comments in this document yet.</p>}
+      </MobilePanel> : editor.doc.comments?.some(c => view.showResolved || !c.resolved) &&
+        <CommentsPanel editor={editor} showResolved={view.showResolved} onClose={() => view.setShowComments(false)} />)}
   </div>;
 }

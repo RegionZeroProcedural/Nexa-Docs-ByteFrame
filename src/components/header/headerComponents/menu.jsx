@@ -9,7 +9,7 @@ export default function Menu({ groups }) {
   useEffect(() => {
     if (!openMenu) return undefined;
     const handlePointerDown = event => {
-      if (navRef.current && !navRef.current.contains(event.target) && !event.target?.closest?.('.submenu-panel')) setOpenMenu(null);
+      if (navRef.current && !navRef.current.contains(event.target) && !event.target?.closest?.('.submenu-panel, .menu-popover')) setOpenMenu(null);
     };
     const handleEscape = event => {
       if (event.key === 'Escape') setOpenMenu(null);

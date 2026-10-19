@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { inspectBinaryStructure } from '../../byteframe/core/binaryStructure';
 import { decodeX86At, instructionCategory } from '../../byteframe/core/x86Decoder';
 import { readableBytes } from '../../byteframe/core/readableBytes';
@@ -7,11 +7,11 @@ import { putByteEdit, overlayByteEdits, buildPatchedBinaryBlob, downloadBlobWith
 import OpcodeExplainer from './opcode_explainer';
 import ByteViewToolbar from './byte_view_toolbar';
 import { buildByteMatchMap, byteHistogram, MAX_MATCH_GROUPS, MAX_PATTERN_BYTES } from '../../byteframe/core/matchGroups';
+import MobilePanel, { useMobileViewport } from '../mobile/MobilePanel';
 
 const PAGE_BYTES = 4096;
 const HEADER_BYTES = 131072;
 const PREVIEW_STRIDE = 32768;
-const BYTES_PER_ROW = 16;
 const hex = v => v.toString(16).toUpperCase().padStart(2, '0');
 const address = n => n.toString(16).toUpperCase().padStart(8, '0');
 const categoryNames = {
@@ -22,6 +22,11 @@ const roleNames = {prefix:'Prefix', opcode:'Opcode', modrm:'ModR/M', sib:'SIB', 
 
 /** Read a small prefix and virtualized viewport; never stringify/upload an entire executable. */
 export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame, onClose, onRegisterDownload }) {
+  const viewport = useMobileViewport();
+  const [mobileInspector, setMobileInspector] = useState(false);
+  const closeMobileInspector = useCallback(() => setMobileInspector(false), []);
+  // Eight values remain legible on phone screens; desktop retains 16 per row.
+  const bytesPerRow = viewport.mobile ? 8 : 16;
   const [prefix, setPrefix] = useState(null);
   const [percent, setPercent] = useState(0);
   const [stage, setStage] = useState('Reading file header');
@@ -52,7 +57,7 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
       setJumpNotice('That offset is outside the file.');
       return;
     }
-    const firstRow = Math.floor(destination / BYTES_PER_ROW) * BYTES_PER_ROW;
+    const firstRow = Math.floor(destination / bytesPerRow) * bytesPerRow;
     // Keep the requested byte in the first row. Reads remain bounded to 4 KiB.
     setOffset(firstRow);
     setSelected(destination);
@@ -177,10 +182,10 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
   const rows = useMemo(() => {
     if (!windowBytes) return [];
     const items = [];
-    for (let at = 0; at < windowBytes.length; at += BYTES_PER_ROW)
-      items.push({ at: offset + at, bytes: windowBytes.slice(at, at + BYTES_PER_ROW) });
+    for (let at = 0; at < windowBytes.length; at += bytesPerRow)
+      items.push({ at: offset + at, bytes: windowBytes.slice(at, at + bytesPerRow) });
     return items;
-  }, [windowBytes, offset]);
+  }, [windowBytes, offset, bytesPerRow]);
   const selectedByte = windowBytes && selected >= offset && selected < offset + windowBytes.length ? windowBytes[selected - offset] : null;
   const originalByte = baseWindowBytes && selected >= offset && selected < offset + baseWindowBytes.length ? baseWindowBytes[selected - offset] : null;
   useEffect(() => {
@@ -235,11 +240,54 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
   const executableSection = structure?.sections?.find(region => region.kind === 'code' &&
     normalizeBinaryOffset(region.start, file.size) !== null);
   const codeSupported = structure?.architecture?.family === 'x86' && structure?.architecture?.verified;
-  const jumpToSection = region => jump(region.start, region.name);
+  const jumpToSection = region => { jump(region.start, region.name); setMobileInspector(false); };
   const closeWithConfirmation = () => {
     if (edits.size && !window.confirm(`${edits.size} edited byte(s) are not exported yet. Close ByteFrame and discard them?`)) return;
     onClose();
   };
+  const analysisRail = showByteFrame ? <aside className="binary-analysis-rail" aria-label="ByteFrame analysis">
+        <span className="binary-eyebrow">BYTEFRAME · INDEPENDENT INSPECTOR</span>
+        <h3>Byte interpretation</h3>
+        <div className="binary-selected-value"><strong>{selectedByte === null ? '—' : hex(selectedByte)}</strong>
+          <span>0x{address(selected)} · {selectedByte === null ? 'Loading' : `${selectedByte} unsigned · ${selectedByte > 127 ? selectedByte - 256 : selectedByte} signed 8-bit · ${selectedByte.toString(2).padStart(8, '0')} binary`}</span></div>
+        <p className="binary-section-tag">{section?.name || 'Unclassified'} · {categoryNames[category] || category}</p>
+        <p>{section?.detail || 'This byte has no identified file section in the inspected header region.'}</p>
+        <p className="binary-decoder-mode">{structure?.architecture
+          ? `Architecture: ${structure.architecture.label}`
+          : 'Architecture unknown · no instruction set assumed from extension alone'}</p>
+        {selectedByte !== null && <p className="binary-selected-role">{decoded
+          ? `${roleNames[decoded.role] || 'Instruction byte'} · ${categoryNames.code}`
+          : section ? `${categoryNames[section.kind] || 'Structural data'} · ${section.name}`
+          : `Raw ${rawByteCategory(selectedByte)} byte · no executable semantics inferred`}</p>}
+        {decoded?.incomplete && <p className="binary-warning" role="status">{decoded.explanation}</p>}
+        {decoded && !decoded.incomplete && <div className="binary-opcode">
+          <b className={`byte-category-${instructionCategory(decoded.mnemonic)}`}>{decoded.mnemonic} {decoded.operands}</b>
+          <OpcodeExplainer instruction={decoded}
+            bytes={selectedInstructionBytes} baseOffset={decoded.start} sequence={instructionSequence}
+            selectedIndex={selected - decoded.start}
+            onChooseByte={index => setSelected(decoded.start + index)} onHoverByte={focusExplainedByte}
+            onChooseInstruction={start => setSelected(start)} />
+        </div>}
+        {structure && <><h4>Detected structure: {structure.format || 'Unrecognized'}</h4>
+          <small>Inspected first {structure.inspectedBytes?.toLocaleString()} bytes; file never executed.</small>
+          <div className="binary-sections">{structure.sections.slice(0, 80).map((s, i) => {
+            const available = normalizeBinaryOffset(s.start, file.size) !== null;
+            const active = section === s;
+            return <button type="button" key={`${s.name}-${i}`} disabled={!available}
+              className={`binary-section-link ${active ? 'is-active' : ''} byte-region-${s.kind}`}
+              aria-current={active ? 'location' : undefined}
+              aria-label={`Jump to ${s.name}, physical file offset 0x${address(s.start)}`}
+              title={available ? `Jump to file offset 0x${address(s.start)}` : 'Region lies outside this file'}
+              onClick={() => jumpToSection(s)}>
+              <b>{s.name}</b><span>{s.kind} · 0x{address(s.start)} · {s.size.toLocaleString()} B</span>
+            </button>;
+          })}</div>
+          {structure.clues?.slice(0,12).map((clue,i) => <p key={i} className="binary-clue">{clue}</p>)}
+          {structure.warnings?.slice(0,8).map((warning,i) => <p key={i} className="binary-warning">{warning}</p>)}
+        </>}
+        {!codeSupported && <p className="binary-decoder-note">Structure colors represent file regions; disassembly is limited to identified x86 executable regions with a supported and verified execution mode. Unsupported machine types remain raw bytes.</p>}
+        <p className="binary-readonly-note">Edits are staged in memory as same-length byte replacements. Download creates a new file with its original name and extension; no file is executed or overwritten. Changing executable bytes may invalidate digital signatures or cause crashes.</p>
+  </aside> : null;
   return <main className="binary-workspace" aria-label="Raw binary file viewer">
     <div className="binary-toolbar">
       <div><span className="binary-eyebrow">NEXA DOCS · RAW FILE MODE</span>
@@ -253,6 +301,10 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
       <span>{percent}% · {readableBytes(Math.min(file.size, HEADER_BYTES) * percent / 100)} / {readableBytes(Math.min(file.size, HEADER_BYTES))}</span>
     </div>}
     {error && <div className="binary-read-error" role="alert">{error}</div>}
+    {prefix && viewport.mobile && <div className="mobile-binary-actions">
+      <button type="button" onClick={() => { if (!showByteFrame) onToggleByteFrame(); setMobileInspector(true); }}>◈ Inspect byte &amp; sections</button>
+      <span>{bytesPerRow} bytes / row · tap a byte to inspect</span>
+    </div>}
     {prefix && <div className="binary-layout">
       <section className={`binary-hex-panel binary-view-${viewMode} ${showAscii ? '' : 'binary-hide-ascii'}`} aria-label="Hex byte viewport">
         <div className="binary-navigation">
@@ -306,49 +358,7 @@ export default function BinaryFileView({ file, showByteFrame, onToggleByteFrame,
             </div>)}</div>}
         <div className="binary-viewport-footer">Showing {windowBytes?.length?.toLocaleString() || 0} bytes of {file.size.toLocaleString()} · sections are inferred from bounded header inspection</div>
       </section>
-      {showByteFrame && <aside className="binary-analysis-rail" aria-label="ByteFrame analysis">
-        <span className="binary-eyebrow">BYTEFRAME · INDEPENDENT INSPECTOR</span>
-        <h3>Byte interpretation</h3>
-        <div className="binary-selected-value"><strong>{selectedByte === null ? '—' : hex(selectedByte)}</strong>
-          <span>0x{address(selected)} · {selectedByte === null ? 'Loading' : `${selectedByte} unsigned · ${selectedByte > 127 ? selectedByte - 256 : selectedByte} signed 8-bit · ${selectedByte.toString(2).padStart(8, '0')} binary`}</span></div>
-        <p className="binary-section-tag">{section?.name || 'Unclassified'} · {categoryNames[category] || category}</p>
-        <p>{section?.detail || 'This byte has no identified file section in the inspected header region.'}</p>
-        <p className="binary-decoder-mode">{structure?.architecture
-          ? `Architecture: ${structure.architecture.label}`
-          : 'Architecture unknown · no instruction set assumed from extension alone'}</p>
-        {selectedByte !== null && <p className="binary-selected-role">{decoded
-          ? `${roleNames[decoded.role] || 'Instruction byte'} · ${categoryNames.code}`
-          : section ? `${categoryNames[section.kind] || 'Structural data'} · ${section.name}`
-          : `Raw ${rawByteCategory(selectedByte)} byte · no executable semantics inferred`}</p>}
-        {decoded?.incomplete && <p className="binary-warning" role="status">{decoded.explanation}</p>}
-        {decoded && !decoded.incomplete && <div className="binary-opcode">
-          <b className={`byte-category-${instructionCategory(decoded.mnemonic)}`}>{decoded.mnemonic} {decoded.operands}</b>
-          <OpcodeExplainer instruction={decoded}
-            bytes={selectedInstructionBytes} baseOffset={decoded.start} sequence={instructionSequence}
-            selectedIndex={selected - decoded.start}
-            onChooseByte={index => setSelected(decoded.start + index)} onHoverByte={focusExplainedByte}
-            onChooseInstruction={start => setSelected(start)} />
-        </div>}
-        {structure && <><h4>Detected structure: {structure.format || 'Unrecognized'}</h4>
-          <small>Inspected first {structure.inspectedBytes?.toLocaleString()} bytes; file never executed.</small>
-          <div className="binary-sections">{structure.sections.slice(0, 80).map((s, i) => {
-            const available = normalizeBinaryOffset(s.start, file.size) !== null;
-            const active = section === s;
-            return <button type="button" key={`${s.name}-${i}`} disabled={!available}
-              className={`binary-section-link ${active ? 'is-active' : ''} byte-region-${s.kind}`}
-              aria-current={active ? 'location' : undefined}
-              aria-label={`Jump to ${s.name}, physical file offset 0x${address(s.start)}`}
-              title={available ? `Jump to file offset 0x${address(s.start)}` : 'Region lies outside this file'}
-              onClick={() => jumpToSection(s)}>
-              <b>{s.name}</b><span>{s.kind} · 0x{address(s.start)} · {s.size.toLocaleString()} B</span>
-            </button>;
-          })}</div>
-          {structure.clues?.slice(0,12).map((clue,i) => <p key={i} className="binary-clue">{clue}</p>)}
-          {structure.warnings?.slice(0,8).map((warning,i) => <p key={i} className="binary-warning">{warning}</p>)}
-        </>}
-        {!codeSupported && <p className="binary-decoder-note">Structure colors represent file regions; disassembly is limited to identified x86 executable regions with a supported and verified execution mode. Unsupported machine types remain raw bytes.</p>}
-        <p className="binary-readonly-note">Edits are staged in memory as same-length byte replacements. Download creates a new file with its original name and extension; no file is executed or overwritten. Changing executable bytes may invalidate digital signatures or cause crashes.</p>
-      </aside>}
+      {viewport.mobile ? <MobilePanel open={mobileInspector && showByteFrame} title="ByteFrame analysis" side="right" onClose={closeMobileInspector}>{analysisRail}</MobilePanel> : analysisRail}
     </div>}
   </main>;
 }
